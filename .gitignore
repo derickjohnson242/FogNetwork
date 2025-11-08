@@ -1,0 +1,71 @@
+# ------------------------------
+# PYTHON & VENV
+# ------------------------------
+venv/
+.venv/
+.vnetwork/
+env/
+ENV/
+*.pyc
+*.pyo
+__pycache__/
+*.pyd
+*.pdb
+
+# ------------------------------
+# EDITORS / OS
+# ------------------------------
+.DS_Store
+Thumbs.db
+
+# ------------------------------
+# LOGS & TEMP FILES
+# ------------------------------
+*.log
+*.tmp
+*.swp
+*.swo
+
+# ------------------------------
+# BUILD ARTIFACTS (PQClean / C libs)
+# ------------------------------
+*.so
+*.dll
+*.dylib
+build/
+dist/
+*.o
+*.a
+*.out
+
+# ------------------------------
+# METRICS / OUTPUT FILES
+# ------------------------------
+metrics.csv
+metrics.xlsx
+*.png
+
+# ------------------------------
+# PYTHON TOOLING
+# ------------------------------
+pip-wheel-metadata/
+pip-log.txt
+.cache/
+.mypy_cache/
+.pytest_cache/
+*.coverage
+.coverage.*
+htmlcov/
+
+# ------------------------------
+# IDE / EDITOR SETTINGS
+# ------------------------------
+.idea/
+.vscode/
+*.code-workspace
+
+# ------------------------------
+# ENVIRONMENT FILES
+# ------------------------------
+.env
+.env.*
