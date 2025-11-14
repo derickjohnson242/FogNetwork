@@ -3,7 +3,7 @@ import ctypes
 import os
 
 # Load the compiled shared library
-lib = ctypes.CDLL(os.path.abspath("libhqc.so"))
+lib = ctypes.CDLL(os.path.abspath("libhqc_normbasis.so"))
 
 # HQC-128 parameter sizes (from PQClean implementation)
 PK_LEN = 2249

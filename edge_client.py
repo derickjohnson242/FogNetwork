@@ -1,4 +1,3 @@
-# edge_client.py
 import socket
 import struct
 import time
@@ -41,8 +40,6 @@ class EdgeClient:
         return h.digest()  # 32 bytes
 
     def _make_payload(self, seq):
-        # create payload_size bytes of sensor-ish data (repeatable)
-        # construct readable prefix, fill remainder with deterministic bytes
         prefix = f"Node{self.node_id}-seq{seq}-".encode()
         remaining = self.payload_size - len(prefix)
         if remaining < 0:
@@ -56,10 +53,11 @@ class EdgeClient:
         addr = (self.fog_host, self.fog_port)
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            connect_delay = random.uniform(0.1, 0.5)
+            time.sleep(connect_delay)
             s.connect(addr)
             print(f"[Edge-{self.node_id}] Connected to Fog at {addr}")
 
-            # Receive encrypted PK from Fog (length-prefixed)
             raw_len = self._recv_exact(s, 4)
             if not raw_len:
                 print(f"[Edge-{self.node_id}] No PK length received")
@@ -72,7 +70,6 @@ class EdgeClient:
                 s.close()
                 return
 
-            # Decrypt PK with PSK (not timing-critical for requested metrics)
             try:
                 t0 = time.perf_counter()
                 fog_pk = self._decrypt_pk_with_psk(blob)
@@ -82,49 +79,35 @@ class EdgeClient:
                 print(f"[Edge-{self.node_id}] PK decrypt failed: {e}")
                 s.close()
                 return
-            print(f"[Edge-{self.node_id}] Received and decrypted Fog PK (prefix hex): {fog_pk.hex()[:32]}...  pk_decrypt_time_ms={pk_decrypt_time_ms:.2f}")
 
-            # Now for each message: encapsulate (generate ct & ss) then encrypt payload with AES-256 (derived from ss)
+            print(f"[Edge-{self.node_id}] Decrypted Fog PK prefix: {fog_pk.hex()[:32]}... pk_decrypt_time_ms={pk_decrypt_time_ms:.2f}")
+
             for seq in range(1, 6):
-                # create payload
                 payload = self._make_payload(seq)
-
-                # encapsulate with fog_pk (we do not time encapsulation here; user requested encryption/decryption times)
                 ct, ss = encapsulate(fog_pk)
-
-                # derive AES key from ss
                 aes_key = self._derive_aes_from_ss(ss)
                 nonce = get_random_bytes(12)
                 cipher = AES.new(aes_key, AES.MODE_GCM, nonce=nonce)
 
-                # measure encryption time (payload encryption)
                 t0 = time.perf_counter()
                 ct_payload, tag = cipher.encrypt_and_digest(payload)
                 t1 = time.perf_counter()
                 enc_time_ms = (t1 - t0) * 1000.0
 
-                # compose message to send: we will send the KEM ciphertext length-prefixed and then the AES payload length-prefixed
-                # first, send payload (encrypted) as length-prefixed blob (per Fog expects ct payloads in its queue)
                 payload_blob = nonce + ct_payload + tag
 
-                # For compatibility with fog_server in this design we will send a *single* message composed of:
-                # [len(ct)] [ct] [len(payload_blob)] [payload_blob]
-                # So fog can read both and decapsulate then decrypt
-                # But to keep earlier simpler design (fog expects single ct per message), we instead send ct alone as earlier,
-                # and the fog will decapsulate and treat the shared secret as if it was the plaintext. To keep the metrics asked (enc/dec
-                # of payload), we will instead send the encrypted payload only and record enc time locally, and rely on fog to decapsulate
-                # this example expects the fog to already have the correct SK and will decapsulate a separate KEM message.
-                # To keep minimal network, we'll *send ct first (len-prefixed) then payload_blob (len-prefixed)*.
+                try:
+                    s.sendall(struct.pack(">I", len(ct)) + ct)
+                    delay = random.uniform(-JITTER_SEC, JITTER_SEC)
+                    time.sleep(max(0, delay))
 
-                # send ct
-                s.sendall(struct.pack(">I", len(ct)) + ct)
-                time.sleep(random.uniform(-JITTER_SEC, JITTER_SEC))
+                    s.sendall(struct.pack(">I", len(payload_blob)) + payload_blob)
+                    delay = random.uniform(-JITTER_SEC, JITTER_SEC)
+                    time.sleep(max(0, delay))
+                except BrokenPipeError:
+                    print(f"[Edge-{self.node_id}] Connection closed early (BrokenPipe)")
+                    break
 
-                # send payload blob
-                s.sendall(struct.pack(">I", len(payload_blob)) + payload_blob)
-                time.sleep(random.uniform(-JITTER_SEC, JITTER_SEC))
-
-                # record metric for this sent payload (encryption time)
                 self.metrics.append({
                     "timestamp": time.time(),
                     "fog_id": f"{self.fog_host}:{self.fog_port}",
@@ -134,11 +117,13 @@ class EdgeClient:
                     "enc_time_ms": enc_time_ms,
                     "dec_time_ms": None
                 })
+
                 print(f"[Edge-{self.node_id}] Sent msg {seq} enc_time_ms={enc_time_ms:.2f}")
-                # jitter between messages
-                time.sleep(random.uniform(-JITTER_SEC, JITTER_SEC))
+                delay = random.uniform(-JITTER_SEC, JITTER_SEC)
+                time.sleep(max(0, delay))
 
             s.close()
-            print(f"[Edge-{self.node_id}] Finished sending 5 payloads")
+            print(f"[Edge-{self.node_id}] Finished sending payloads")
+
         except Exception as e:
             print(f"[Edge-{self.node_id}] Error: {e}")

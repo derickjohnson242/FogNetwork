@@ -44,6 +44,8 @@ dist/
 metrics.csv
 metrics.xlsx
 *.png
+output/
+draft/
 
 # ------------------------------
 # PYTHON TOOLING
